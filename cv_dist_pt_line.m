@@ -25,6 +25,8 @@ function d = cv_dist_pt_line(point,line)
 %
 %         0    1.0000    0.7071    1.4142
 %
+
+
 pt1 = line(1,:);
 pt2 = line(2,:);
 numer = (point(1)-pt1(1))*(pt2(1)-pt1(1)) ...

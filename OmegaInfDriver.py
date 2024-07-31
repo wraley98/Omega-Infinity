@@ -6,6 +6,7 @@ import Crazyflie
 import numpy as np
 import threading
 import time
+import pandas as pd
 
 # Camera imports
 from RSCamera import Camera
@@ -25,20 +26,20 @@ class OmegaInfDriver:
         Summer 2024
     """
     def __init__(self):
-
-        numCF = 1
+        
+        self.cfInstruct = pd.read_excel('crazyflieRunInstruct.xlsx').values
 
         # Create radios
-        self.numCF = numCF
+        self.numCF =  self.cfInstruct[-1 , 0]
         self.uriList = np.array([])
 
-        for ii in range(numCF):
-            
-            uriName = 'radio://0/80/2M/E7E7E7E70' + '1'
-            self.uriList = np.append(self.uriList , uriName)
+        for ii in range(int(self.numCF)):
+
+            uri = str(ii + 1)
+            self.uriList = np.append(self.uriList , uri)
 
         # Create camera object
-        self.rsCam = Camera(numCF)
+        self.rsCam = Camera(self.numCF)
         
         # Run code
         self.run()
@@ -49,17 +50,34 @@ class OmegaInfDriver:
 
         cfList = np.array([])
 
-        for uri in self.uriList:
+        startIndex = 0
+        endIndex = 0
+
+        for uriNum in self.uriList:
             
-            cf = Crazyflie.CrazyFlie(uri , self.rsCam)
+            while self.cfInstruct[endIndex , 0] != 99:
+
+                endIndex += 1
+
+            inst = self.cfInstruct[startIndex:endIndex , 0:9]
+
+            endIndex += 1
+            startIndex = endIndex 
+            
+            cf = Crazyflie.CrazyFlie(uriNum , self.rsCam , inst)
             cfList = np.append(cfList , cf)
 
         threads = []
+
+        timeIndex = 0
 
         for cf in cfList:    
             thread = threading.Thread(target=cf.run , args=())
             threads.append(thread)
             thread.start()
+
+            time.sleep(self.cfInstruct[timeIndex ,7])
+            timeIndex += 8
 
         numCFFlying = self.numCF
         cfIsFlying = True

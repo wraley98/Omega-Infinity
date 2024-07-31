@@ -11,12 +11,12 @@ classdef TrackCF < handle
 
         function cfTracker = TrackCF()
 
-            cfTracker.nn = load('cfNN.mat');
+            cfTracker.nn = load('cfNNWBD.mat');
             cfTracker.frameNum = 1;
 
         end
 
-        function bboxes = LocateCF(cfTracker , img)
+        function bboxes = LocateCF(cfTracker, img, cfNum)
             % FindCF - uses a neural net (nn) to determine the location of the cf in a
             % given image
             %
@@ -62,18 +62,14 @@ classdef TrackCF < handle
 
                 bboxes = maxBBox;
             end
-         
-            % center of box of approximate cf location
-            cpX = bboxes(3) / 2 + bboxes(1);
-            cpY = bboxes(4) / 2 + bboxes(2);
 
-            % cf location (X , Y) in array to be returned
-            cfLoc = [cpX , cpY];
-            detectedImg = insertMarker(img , [cpX , cpY] , '*' , 'MarkerColor','green' ,'Size', 20);
-            
+            detectedImg = insertShape(img , "rectangle" , bboxes);
+ 
             cd('DetectedImgs\');
 
-            fileName = append(string(cfTracker.frameNum) , '.jpg');
+           fileName = append('cfNum', string(int64(cfNum)),...
+               string(cfTracker.frameNum) , '.jpg');
+  
             imwrite(detectedImg , fileName);
             cfTracker.frameNum = cfTracker.frameNum + 1;
             cd('..');

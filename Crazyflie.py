@@ -29,16 +29,19 @@ class CrazyFlie:
         UU
         Summer 2024
     """
-    def __init__ (self , uriName , cam):
+    def __init__ (self , uriNum , cam, inst):
         # Storage for location data
         self.telReportedLoc = []
         self.camReportedLoc = []
         self.transitData = []
         self.transitionPts = []
+        self.route = inst[: , 0:3]
 
-        self.position_estimate = [0 , 0 , 0]
+        self.position_estimate = []
 
         # radio information
+        self.cfNum = uriNum
+        uriName = 'radio://0/80/2M/E7E7E7E70' + self.cfNum
         self.uri = uri_helper.uri_from_env(default= uriName)
 
         # Camera information
@@ -46,6 +49,9 @@ class CrazyFlie:
 
         # Current state of cf
         self.state = True
+
+        # Speed of flight
+        self.speed = inst[0,7]
 
     def createLog(self):
             # prepares log data
@@ -62,10 +68,15 @@ class CrazyFlie:
             return logconf
 
     # Sets the current position
-    def setPos(self , logConf):
+    def setPos(self , logConf, pc):
         # Starts the log
         logConf.start()
         time.sleep(0.1)
+
+       # self.initX = pc._x
+        #self.initY = pc._y
+       # self.initZ = pc._z
+
         logConf.stop()
         logConf.delete()
         
@@ -76,84 +87,88 @@ class CrazyFlie:
         return self.state
 
     def updateLoc(self):
-    
-        camReported = self.cam.locateCF()
+        
+        # Updates telemetry data
+        locArr = self.position_estimate
+        self.telReportedLoc = np.append(self.telReportedLoc , locArr )
+        
+        # Updates Camera reported location
+        camReported = self.cam.locateCF(self.cfNum , locArr)
     
         if camReported[0] == 0 or camReported[1] == 0 or camReported[2] == 0 or abs(camReported[0]) > 3:
             while camReported[0] == 0 or camReported[1] == 0 or camReported[2] == 0 or abs(camReported[0]) > 5:
-                 camReported = self.cam.locateCF()
+                 camReported = self.cam.locateCF(self.cfNum , locArr)
 
         self.camReportedLoc = np.append(self.camReportedLoc , [camReported[0] , camReported[2] ,camReported[1]])
-        self.telReportedLoc = np.append(self.telReportedLoc , self.position_estimate)
+        
 
     def fly(self):
 
         with PositionHlCommander(self.scf) as pc:
             
             # Sets Position
-            pc._x = self.position_estimate[0]
-            pc._y = self.position_estimate[1]
-            pc._z = self.position_estimate[2]
+            logConf = self.createLog()
+            self.logConf = self.setPos(logConf , pc) 
+            
+            initX = pc._x
+            initY = pc._y
+            initZ = pc._z
 
+            self.transitData = np.append(self.transitData , [initX, initY, initZ])
+            
             # Sets flying status to off
             pc._is_flying = False
 
             self.logConf.start()
 
-            # Take Off
-            self.transitData = np.append(self.transitData , [pc._x , pc._y , pc._z])
-            pc.take_off(height=0.5 , velocity = 0.05)
-            #pc.go_to(pc._x , pc._y , 0.5)
-            
-            initX = self.position_estimate[0]
-            initY = self.position_estimate[1]
-            initZ = self.position_estimate[2]
-
-            time.sleep(3)
-
             # move
+            pc.take_off(height=0.1 , velocity=self.speed)
             self.transitionPts = np.append(self.transitionPts , len(self.camReportedLoc))
-            [currX , currY , currZ ] = self.directTransit([0 , 0 , 0.1], [initX, initY , initZ], pc)
-            [currX , currY , currZ ] = self.directTransit([0.4 , 0 , 0], [currX , currY , currZ], pc)
-            [currX , currY , currZ ] = self.directTransit([0 , -0.125 , 0], [currX , currY , currZ], pc)
-            [currX , currY , currZ ] = self.directTransit([0.35 , 0.25 , 0], [currX , currY , currZ], pc)
-            [currX , currY , currZ ] = self.directTransit([0 , -0.125 , 0], [currX , currY , currZ], pc)
-            [currX , currY , currZ ] = self.directTransit([0 , 0 , -0.05], [currX , currY , currZ], pc)
+
+            [currX , currY , currZ ] = self.directTransit(self.route[0 , :], [initX, initY, initZ], pc)
+            np.delete(self.route , 0)
+
+            for pt in self.route:
+                
+               [currX , currY , currZ ] = self.directTransit(pt, [currX , currY , currZ ], pc)
 
             # landing sequence
-            self.transitData = np.append(self.transitData , [pc._x , pc._y  , 0.35])
-            pc.go_to(pc._x , pc._y  , 0.35 , velocity = 0.05)
-            time.sleep(3)
-            
             pc._is_flying = True
-            pc.land(velocity = 0.1)
+            pc.land(velocity = self.speed)
             self.logConf.stop()
+            self.transitData = np.append(self.transitData , [pc._x , pc._y  , pc._z ])
             self.state = False
+
+            self.recordData()
 
     def directTransit(self , goToArr, currLoc, pc):
 
-        xUpdate = currLoc[0] + goToArr[0]
-        yUpdate = currLoc[1] + goToArr[1]
-        zUpdate = currLoc[2] + goToArr[2]
+        #xUpdate = currLoc[0] + goToArr[0]
+        #yUpdate = currLoc[1] + goToArr[1]
+        #zUpdate = currLoc[2] + goToArr[2]
 
-        self.transitData = np.append(self.transitData , [ xUpdate , yUpdate , zUpdate])
-        pc.go_to(xUpdate, yUpdate, zUpdate, velocity = 0.05)
-        time.sleep(3)
-        
+        self.transitData = np.append(self.transitData , [currLoc[0] , currLoc[1] , currLoc[2]])
+       
+        pc.go_to(goToArr[0], goToArr[1], goToArr[2], velocity = self.speed)
+        time.sleep(1)
         self.transitionPts = np.append(self.transitionPts , len(self.camReportedLoc))
 
-        return [xUpdate , yUpdate , zUpdate]
+        return [goToArr[0], goToArr[1], goToArr[2]]
 
 
 
     # Sets location to current estimate
     def log_pos_callback(self , timestamp, data, logconf):
         
-        #print(data)
-    
-        self.position_estimate[0] = data['kalman.stateX']
-        self.position_estimate[1] = data['kalman.stateY']
-        self.position_estimate[2] = data['kalman.stateZ']
+        # print(data)
+        
+        tempEstimate = [0, 0, 0]
+
+        tempEstimate[0] = data['kalman.stateX']
+        tempEstimate[1] = data['kalman.stateY']
+        tempEstimate[2] = data['kalman.stateZ']
+
+        self.position_estimate = tempEstimate
 
     # Records data to spreadsheet
     def recordData(self):
@@ -183,9 +198,9 @@ class CrazyFlie:
 
         sheet = doc.create_sheet("Transit Data")
 
-        for i in range(int(len(self.transitData) / 3)) :
-            ii = i * 3
-            line = [self.transitData[ii] , self.transitData[ii - 2] , self.transitData[ii - 1]]
+        for ii in range(int(len(self.route))) :
+
+            line = [self.route[ii , 0] , self.route[ii , 1] , self.route[ii , 2]]
             sheet.append(line)
 
         doc.save(filename)
@@ -214,11 +229,7 @@ class CrazyFlie:
            
             # save scf for access throughout class
             self.scf = scf
-           
-            # Creates log and sets initial estimate on postion
-            logConf = self.createLog()
-            self.logConf = self.setPos(logConf) 
     
             self.fly()
 
-        self.recordData()
+        
